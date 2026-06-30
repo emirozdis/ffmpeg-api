@@ -1,6 +1,6 @@
 import os from 'os';
 import { systemDetector } from './system-detector';
-import { systemHealth } from './system-health';
+import { healthChecker } from './system-health';
 import { loadMonitor } from './load-monitor';
 import { metricsRecorder } from './metrics-recorder';
 
@@ -11,24 +11,24 @@ class SystemState {
   }
 
   get healthChecks() {
-    return systemHealth.checks;
+    return healthChecker.checksResult;
   }
 
   get overallHealth() {
-    return systemHealth.overallHealth;
+    return healthChecker.health.status;
   }
 
   get healthSummary() {
-    return systemHealth.getHealth();
+    return healthChecker.health;
   }
 
   get currentConcurrency() {
-    return loadMonitor.concurrency;
+    return loadMonitor.getConcurrency();
   }
 
   get metrics() {
     const m = metricsRecorder.getMetrics();
-    m.currentConcurrency = loadMonitor.concurrency;
+    m.currentConcurrency = loadMonitor.getConcurrency();
     return m;
   }
 
