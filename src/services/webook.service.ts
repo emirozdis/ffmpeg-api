@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { config } from '../config/env'; // Import config to use the API_KEY or a specific WEBHOOK_SECRET
 
 export const sendWebhook = async (url: string, payload: any): Promise<void> => {
   try {
@@ -6,7 +7,10 @@ export const sendWebhook = async (url: string, payload: any): Promise<void> => {
     
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-webhook-secret': config.API_KEY // <-- ADD THIS: Securely sign the request
+      },
       body: JSON.stringify(payload),
     });
     
