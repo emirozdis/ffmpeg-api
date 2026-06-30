@@ -1,0 +1,36 @@
+{
+  "name": "myturn-video-pipeline",
+  "version": "1.0.0",
+  "description": "Video upload and transcoding service for MyTurn",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn src/index.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.500.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "fluent-ffmpeg": "^2.1.2",
+    "helmet": "^7.0.0",
+    "mime-types": "^2.1.35",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.13",
+    "@types/express": "^4.17.17",
+    "@types/fluent-ffmpeg": "^2.1.21",
+    "@types/mime-types": "^2.1.4",
+    "@types/multer": "^1.4.7",
+    "@types/node": "^20.5.9",
+    "@types/uuid": "^9.0.3",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.2.2"
+  },
+  "allowScripts": {
+    "fsevents@2.3.3": true
+  }
+}
