@@ -1,3 +1,4 @@
+// myturn-video-pipeline/src/services/transcode.service.ts
 import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import fs from 'fs';
@@ -49,9 +50,8 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
   const outputDir = path.join(config.PROCESSED_DIR, jobId);
   const originalFileName = job ? job.originalFileName : 'unknown';
 
-  // Extract flag instructions
   const options = job.remotePayload?.options || {};
-  const generateHls = options.generateHls !== false; // defaults to true
+  const generateHls = options.generateHls !== false; 
   const generateThumbnail = !!options.generateThumbnail;
   const generateBlur = !!options.generateBlur;
   const facingMode = options.facingMode || 'user';
@@ -61,7 +61,6 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
   let localBlurPath = '';
 
   try {
-    // 1. DOWNLOAD PHASE (Remote Jobs Only)
     if (job.remotePayload) {
       jobService.updateJobStatus(jobId, 'DOWNLOADING', 0);
       const ext = path.extname(job.remotePayload.sourceKey) || '.mp4';
@@ -73,7 +72,6 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
     const metadata = await probeVideoMetadata(activeInputPath);
     const { hasAudio, durationMs } = metadata;
 
-    // 2. EXTRACTION PHASE (Thumbnails)
     if (generateThumbnail && job.remotePayload?.thumbnailKey) {
       logger.info(`[Transcoder] Extracting standard thumbnail frame at ${thumbnailTime}s for clip: ${jobId}`);
       localThumbPath = path.join(config.PROCESSED_DIR, `${jobId}-thumb.jpg`);
@@ -94,7 +92,6 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       await runCommand(cmd, 15000);
     }
 
-    // 3. TRANSCODE PHASE (HLS Ladder)
     if (generateHls) {
       jobService.updateJobStatus(jobId, 'PROCESSING', 0);
       
@@ -106,9 +103,9 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       await new Promise<void>((resolve, reject) => {
         const filterComplex = [
           '[0:v]split=3[v1][v2][v3]',
-          '[v1]scale=-2:1920[v1out]', // 1080p
-          '[v2]scale=-2:1280[v2out]', // 720p
-          '[v3]scale=-2:854[v3out]'   // 480p
+          '[v1]scale=-2:1920[v1out]', 
+          '[v2]scale=-2:1280[v2out]', 
+          '[v3]scale=-2:854[v3out]'   
         ].join(';');
 
         const outputOptions: string[] = [
@@ -158,6 +155,11 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
           .run();
       });
 
+      // Dual-Manifest Generation: Write secondary 480p-only manifest explicitly for free-tier viewing
+      const masterSdPath = path.join(outputDir, 'master_sd.m3u8');
+      const sdContent = `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=854x480\nstream_2/playlist.m3u8\n`;
+      fs.writeFileSync(masterSdPath, sdContent);
+
       const transcodeDurationMs = Date.now() - transcodeStartTime;
       metricsRecorder.record(
         jobId,
@@ -170,7 +172,6 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       );
     }
 
-    // 4. UPLOAD PHASE (Remote Jobs Only)
     if (job.remotePayload) {
       jobService.updateJobStatus(jobId, 'UPLOADING', 0);
       
@@ -185,7 +186,6 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       }
     }
 
-    // 5. FINALIZE & WEBHOOK CALLBACK
     jobService.updateJobStatus(jobId, 'COMPLETED', 100, generateHls ? outputDir : undefined);
 
     if (job.remotePayload) {
@@ -208,7 +208,6 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
     logger.error(`Pipeline sequence failed for job ${jobId}`, { error: error.message });
     jobService.updateJobStatus(jobId, 'FAILED', undefined, undefined, error.message);
     
-    // Notify Next.js server of remote failure
     if (job.remotePayload) {
       await sendWebhook(job.remotePayload.webhookUrl, {
         jobId: jobId,
@@ -217,7 +216,6 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       });
     }
   } finally {
-    // 6. SECURE GARBAGE COLLECTION
     if (activeInputPath && fs.existsSync(activeInputPath)) {
       fs.unlink(activeInputPath, () => {});
     }
