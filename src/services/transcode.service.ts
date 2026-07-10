@@ -155,11 +155,6 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
           .run();
       });
 
-      // Dual-Manifest Generation: Write secondary 480p-only manifest explicitly for free-tier viewing
-      const masterSdPath = path.join(outputDir, 'master_sd.m3u8');
-      const sdContent = `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=854x480\nstream_2/playlist.m3u8\n`;
-      fs.writeFileSync(masterSdPath, sdContent);
-
       const transcodeDurationMs = Date.now() - transcodeStartTime;
       metricsRecorder.record(
         jobId,
