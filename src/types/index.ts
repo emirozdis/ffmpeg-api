@@ -3,8 +3,10 @@
 export interface AppConfig {
   PORT: number;
   API_KEY: string;
+  WEBHOOK_SECRET: string;
   UPLOAD_DIR: string;
   PROCESSED_DIR: string;
+  STATE_DIR: string;
   MAX_FILE_SIZE: number;
   MAX_CONCURRENT_JOBS: number;
   METRICS_BUFFER_SIZE: number;
@@ -17,6 +19,8 @@ export interface AppConfig {
   R2_ACCOUNT_ID: string;
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
+  R2_BUCKET_NAME: string;
+  ALLOWED_WEBHOOK_ORIGINS: string[];
 }
 
 export type JobStatus = 'PENDING' | 'DOWNLOADING' | 'PROCESSING' | 'UPLOADING' | 'COMPLETED' | 'FAILED';

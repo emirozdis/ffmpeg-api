@@ -40,6 +40,7 @@ export class HealthChecker {
     this.checkEnvironment();
     this.checkUploadDir();
     this.checkProcessedDir();
+    this.checkStateDir();
     this.checkGpu();
 
     return this.checks;
@@ -101,6 +102,7 @@ export class HealthChecker {
 
     if (!config.UPLOAD_DIR) issues.push('UPLOAD_DIR not configured');
     if (!config.PROCESSED_DIR) issues.push('PROCESSED_DIR not configured');
+    if (!config.STATE_DIR) issues.push('STATE_DIR not configured');
     if (!config.API_KEY) issues.push('API_KEY not configured');
     if (config.PORT < 1024 || config.PORT > 65535) issues.push(`PORT ${config.PORT} is out of valid range`);
     if (config.MAX_FILE_SIZE <= 0) issues.push('MAX_FILE_SIZE must be positive');
@@ -127,6 +129,15 @@ export class HealthChecker {
       this.checks.push({ name: 'processed-dir', status: 'pass', message: `Processed directory is writable: ${config.PROCESSED_DIR}` });
     } catch {
       this.checks.push({ name: 'processed-dir', status: 'fail', message: `Processed directory is not writable: ${config.PROCESSED_DIR}` });
+    }
+  }
+
+  private checkStateDir(): void {
+    try {
+      fs.accessSync(config.STATE_DIR, fs.constants.W_OK);
+      this.checks.push({ name: 'state-dir', status: 'pass', message: `State directory is writable: ${config.STATE_DIR}` });
+    } catch {
+      this.checks.push({ name: 'state-dir', status: 'fail', message: `State directory is not writable: ${config.STATE_DIR}` });
     }
   }
 

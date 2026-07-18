@@ -47,6 +47,7 @@ const server = app.listen(config.PORT, () => {
   logger.info(`Video Pipeline Service is running on http://localhost:${config.PORT}`, { port: config.PORT });
   logger.debug(`Uploads dir: ${config.UPLOAD_DIR}`, { dir: config.UPLOAD_DIR });
   logger.debug(`Processed dir: ${config.PROCESSED_DIR}`, { dir: config.PROCESSED_DIR });
+  logger.debug(`State dir: ${config.STATE_DIR}`, { dir: config.STATE_DIR });
 });
 
 // --- Graceful Shutdown ---

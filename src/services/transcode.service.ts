@@ -2,7 +2,7 @@
 import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import fs from 'fs';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { config } from '../config/env';
 import { jobService } from './job.service';
 import { metricsRecorder } from './metrics-recorder';
@@ -15,9 +15,9 @@ interface VideoMetadata {
   durationMs: number;
 }
 
-const runCommand = (cmd: string, timeoutMs: number): Promise<string> => {
+const runFfmpeg = (args: string[], timeoutMs: number): Promise<string> => {
   return new Promise((resolve, reject) => {
-    exec(cmd, { timeout: timeoutMs }, (err, stdout, stderr) => {
+    execFile('ffmpeg', args, { timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
         reject(new Error(stderr?.trim() || err.message));
       } else {
@@ -63,7 +63,8 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
   try {
     if (job.remotePayload) {
       jobService.updateJobStatus(jobId, 'DOWNLOADING', 0);
-      const ext = path.extname(job.remotePayload.sourceKey) || '.mp4';
+      const requestedExt = path.extname(job.remotePayload.sourceKey).toLowerCase();
+      const ext = ['.mp4', '.mov', '.m4v', '.webm'].includes(requestedExt) ? requestedExt : '.mp4';
       activeInputPath = path.join(config.UPLOAD_DIR, `${jobId}${ext}`);
       
       await downloadFileFromR2(job.remotePayload.bucket, job.remotePayload.sourceKey, activeInputPath);
@@ -76,10 +77,10 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       logger.info(`[Transcoder] Extracting standard thumbnail frame at ${thumbnailTime}s for clip: ${jobId}`);
       localThumbPath = path.join(config.PROCESSED_DIR, `${jobId}-thumb.jpg`);
       
-      const flipFilter = facingMode === 'user' ? '-vf hflip' : '';
-      const cmd = `ffmpeg -y -i "${activeInputPath}" -ss ${thumbnailTime} ${flipFilter} -vframes 1 -q:v 2 "${localThumbPath}"`;
-      
-      await runCommand(cmd, 15000);
+      const args = ['-y', '-i', activeInputPath, '-ss', String(thumbnailTime)];
+      if (facingMode === 'user') args.push('-vf', 'hflip');
+      args.push('-vframes', '1', '-q:v', '2', localThumbPath);
+      await runFfmpeg(args, 15000);
     }
 
     if (generateBlur && job.remotePayload?.blurKey) {
@@ -87,9 +88,10 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       localBlurPath = path.join(config.PROCESSED_DIR, `${jobId}-blur.jpg`);
       
       const filters = facingMode === 'user' ? 'scale=80:142,hflip' : 'scale=80:142';
-      const cmd = `ffmpeg -y -i "${activeInputPath}" -ss ${thumbnailTime} -vf "${filters}" -vframes 1 -q:v 15 "${localBlurPath}"`;
-      
-      await runCommand(cmd, 15000);
+      await runFfmpeg([
+        '-y', '-i', activeInputPath, '-ss', String(thumbnailTime),
+        '-vf', filters, '-vframes', '1', '-q:v', '15', localBlurPath,
+      ], 15000);
     }
 
     if (generateHls) {

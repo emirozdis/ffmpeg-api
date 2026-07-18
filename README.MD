@@ -46,6 +46,8 @@ API_KEY=your-secure-shared-api-key
 # Storage Directories
 UPLOAD_DIR=./storage/uploads
 PROCESSED_DIR=./storage/processed
+# Mount this directory on a persistent volume in production.
+STATE_DIR=./storage/state
 
 # Job Configuration and Load Tuning
 MAX_CONCURRENT_JOBS=0
