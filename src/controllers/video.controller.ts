@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import path from 'path';
+import { webhookPayloadMatchesJob } from '../utils/webhook-payload';
 import { AppError } from '../utils/AppError';
 import { jobService } from '../services/job.service';
 import { queueService } from '../services/queue.service';
@@ -8,9 +9,9 @@ import { logger } from '../utils/logger';
 import { config } from '../config/env';
 import { validateComposition } from '../utils/composition';
 import { validateStorageBucket } from '../utils/storage';
+import { validateRemoteStoragePaths } from '../utils/remote-storage-paths';
 
 const SAFE_ID = /^[a-zA-Z0-9_-]{8,128}$/;
-const SOURCE_FILE = /^([a-zA-Z0-9_-]{8,128})-media\.(mp4|mov|m4v|webm)$/i;
 
 function validateWebhookUrl(value: unknown): string {
   if (typeof value !== 'string' || value.length > 2048) {
@@ -28,54 +29,6 @@ function validateWebhookUrl(value: unknown): string {
     throw new AppError('Webhook URL is not allowlisted.', 400);
   }
   return url.toString();
-}
-
-function validateRemoteStoragePaths(input: {
-  jobId: string;
-  sourceKey: unknown;
-  outputDirKey: unknown;
-  thumbnailKey: unknown;
-  blurKey: unknown;
-  options: Record<string, unknown>;
-}) {
-  if (typeof input.sourceKey !== 'string' || input.sourceKey.length > 1024 ||
-      input.sourceKey.startsWith('/') || input.sourceKey.includes('\\') ||
-      input.sourceKey.includes('//') || /[\u0000-\u001f\u007f]/.test(input.sourceKey)) {
-    throw new AppError('Invalid source storage key.', 400);
-  }
-
-  const parts = input.sourceKey.split('/');
-  const hasVirtualBucketPrefix = parts[0] === 'vlogs';
-  if (parts.length !== (hasVirtualBucketPrefix ? 4 : 3)) {
-    throw new AppError('Source storage key is outside the vlog namespace.', 400);
-  }
-  const namespaceParts = hasVirtualBucketPrefix ? parts.slice(1) : parts;
-  const [groupId, assignmentId, fileName] = namespaceParts;
-  const sourceMatch = fileName.match(SOURCE_FILE);
-  if (!SAFE_ID.test(groupId) || !SAFE_ID.test(assignmentId) || !sourceMatch) {
-    throw new AppError('Source storage key is outside the vlog namespace.', 400);
-  }
-
-  const prefix = input.sourceKey.slice(0, input.sourceKey.length - fileName.length);
-  const mediaId = sourceMatch[1];
-  const generateHls = input.options.generateHls !== false;
-  const generateThumbnail = input.options.generateThumbnail === true;
-  const generateBlur = input.options.generateBlur === true;
-
-  if (generateHls && input.outputDirKey !== `${prefix}${input.jobId}_hls`) {
-    throw new AppError('Invalid HLS output storage key.', 400);
-  }
-  if (generateThumbnail && input.thumbnailKey !== `${prefix}${mediaId}-thumb.jpg`) {
-    throw new AppError('Invalid thumbnail storage key.', 400);
-  }
-  if (generateBlur && input.blurKey !== `${prefix}${mediaId}-thumb-blur.jpg`) {
-    throw new AppError('Invalid blur storage key.', 400);
-  }
-  if ((!generateHls && input.outputDirKey !== undefined) ||
-      (!generateThumbnail && input.thumbnailKey !== undefined) ||
-      (!generateBlur && input.blurKey !== undefined)) {
-    throw new AppError('Unexpected output storage key.', 400);
-  }
 }
 
 export const uploadVideo = catchAsync(async (req: Request, res: Response) => {
@@ -138,10 +91,7 @@ export const processRemoteVideo = catchAsync(async (req: Request, res: Response)
     throw new AppError('Invalid webhook payload.', 400);
   }
   if (typeof webhookPayload === 'string') {
-    try {
-      const parsed = JSON.parse(webhookPayload) as { clipId?: unknown };
-      if (parsed.clipId !== jobId) throw new Error('mismatch');
-    } catch {
+    if (!webhookPayloadMatchesJob(webhookPayload, jobId)) {
       throw new AppError('Webhook payload does not match the job.', 400);
     }
   }
