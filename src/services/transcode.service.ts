@@ -3,12 +3,14 @@ import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
+import { pipeline } from 'stream/promises';
 import { config } from '../config/env';
 import { jobService } from './job.service';
 import { metricsRecorder } from './metrics-recorder';
 import { logger } from '../utils/logger';
 import { downloadFileFromR2, uploadDirectoryToR2, uploadFileToR2 } from './r2.service';
 import { sendWebhook } from './webook.service';
+import { RecordingComposition } from '../types';
 
 interface VideoMetadata {
   hasAudio: boolean;
@@ -41,13 +43,91 @@ const probeVideoMetadata = (inputPath: string): Promise<VideoMetadata> => {
   });
 };
 
+async function extractCompositionSources(
+  bundlePath: string,
+  composition: RecordingComposition,
+  workDir: string,
+): Promise<string[]> {
+  const bundleSize = fs.statSync(bundlePath).size;
+  if (bundleSize !== composition.totalBytes) {
+    throw new Error(`Composition bundle size mismatch: expected ${composition.totalBytes}, received ${bundleSize}`);
+  }
+
+  if (fs.existsSync(workDir)) fs.rmSync(workDir, { recursive: true, force: true });
+  fs.mkdirSync(workDir, { recursive: true });
+  const paths: string[] = [];
+  for (let index = 0; index < composition.segments.length; index += 1) {
+    const segment = composition.segments[index];
+    const segmentPath = path.join(workDir, `segment-${String(index).padStart(3, '0')}.mp4`);
+    await pipeline(
+      fs.createReadStream(bundlePath, { start: segment.offset, end: segment.offset + segment.length - 1 }),
+      fs.createWriteStream(segmentPath, { flags: 'wx', mode: 0o600 }),
+    );
+    if (fs.statSync(segmentPath).size !== segment.length) {
+      throw new Error(`Composition segment ${index} could not be extracted completely`);
+    }
+    paths.push(segmentPath);
+  }
+  return paths;
+}
+
+export async function composeRecordingSegments(
+  bundlePath: string,
+  composition: RecordingComposition,
+  workDir: string,
+): Promise<string> {
+  const segmentPaths = await extractCompositionSources(bundlePath, composition, workDir);
+  const segmentMetadata = await Promise.all(segmentPaths.map(probeVideoMetadata));
+  const probedDurationMs = segmentMetadata.reduce((sum, metadata) => sum + metadata.durationMs, 0);
+  const durationToleranceMs = 2_000 + composition.segments.length * 250;
+  if (probedDurationMs <= 0 || probedDurationMs > composition.totalSourceDurationMs + durationToleranceMs) {
+    throw new Error('Composition media duration exceeds its validated manifest');
+  }
+  const outputPath = path.join(workDir, 'composed.mp4');
+  const args: string[] = ['-y'];
+  segmentPaths.forEach((segmentPath) => args.push('-i', segmentPath));
+
+  const filters: string[] = [];
+  composition.segments.forEach((segment, index) => {
+    const flip = segment.facingMode === 'user' ? ',hflip' : '';
+    filters.push(
+      `[${index}:v]setpts=(PTS-STARTPTS)/${segment.speed}${flip},` +
+      `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30[v${index}]`,
+    );
+    if (segmentMetadata[index].hasAudio) {
+      filters.push(
+        `[${index}:a]aresample=48000,atempo=${segment.speed},asetpts=N/SR/TB[a${index}]`,
+      );
+    } else {
+      const outputDuration = Math.max(0.001, segmentMetadata[index].durationMs / 1000 / segment.speed);
+      filters.push(
+        `anullsrc=r=48000:cl=stereo,atrim=duration=${outputDuration.toFixed(3)},asetpts=N/SR/TB[a${index}]`,
+      );
+    }
+  });
+  const concatInputs = composition.segments.map((_, index) => `[v${index}][a${index}]`).join('');
+  filters.push(`${concatInputs}concat=n=${composition.segments.length}:v=1:a=1[vout][aout]`);
+
+  args.push(
+    '-filter_complex', filters.join(';'),
+    '-map', '[vout]', '-map', '[aout]',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
+    '-movflags', '+faststart', outputPath,
+  );
+  await runFfmpeg(args, 10 * 60_000);
+  return outputPath;
+}
+
 export const processVideo = async (jobId: string, initialInputPath: string): Promise<void> => {
   const job = jobService.getJob(jobId);
   if (!job) return;
 
   const transcodeStartTime = Date.now();
   let activeInputPath = initialInputPath;
+  let downloadedSourcePath = '';
   const outputDir = path.join(config.PROCESSED_DIR, jobId);
+  const compositionDir = path.join(config.PROCESSED_DIR, `${jobId}-composition`);
   const originalFileName = job ? job.originalFileName : 'unknown';
 
   const options = job.remotePayload?.options || {};
@@ -56,6 +136,7 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
   const generateBlur = !!options.generateBlur;
   const facingMode = options.facingMode || 'user';
   const thumbnailTime = options.thumbnailTime ?? 0.5;
+  const composition = options.composition;
 
   let localThumbPath = '';
   let localBlurPath = '';
@@ -68,6 +149,12 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       activeInputPath = path.join(config.UPLOAD_DIR, `${jobId}${ext}`);
       
       await downloadFileFromR2(job.remotePayload.bucket, job.remotePayload.sourceKey, activeInputPath);
+      downloadedSourcePath = activeInputPath;
+    }
+
+    if (composition) {
+      jobService.updateJobStatus(jobId, 'PROCESSING', 0);
+      activeInputPath = await composeRecordingSegments(activeInputPath, composition, compositionDir);
     }
 
     const metadata = await probeVideoMetadata(activeInputPath);
@@ -78,7 +165,7 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       localThumbPath = path.join(config.PROCESSED_DIR, `${jobId}-thumb.jpg`);
       
       const args = ['-y', '-i', activeInputPath, '-ss', String(thumbnailTime)];
-      if (facingMode === 'user') args.push('-vf', 'hflip');
+      if (!composition && facingMode === 'user') args.push('-vf', 'hflip');
       args.push('-vframes', '1', '-q:v', '2', localThumbPath);
       await runFfmpeg(args, 15000);
     }
@@ -87,7 +174,7 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       logger.info(`[Transcoder] Extracting blur placeholder at ${thumbnailTime}s for clip: ${jobId}`);
       localBlurPath = path.join(config.PROCESSED_DIR, `${jobId}-blur.jpg`);
       
-      const filters = facingMode === 'user' ? 'scale=80:142,hflip' : 'scale=80:142';
+      const filters = !composition && facingMode === 'user' ? 'scale=80:142,hflip' : 'scale=80:142';
       await runFfmpeg([
         '-y', '-i', activeInputPath, '-ss', String(thumbnailTime),
         '-vf', filters, '-vframes', '1', '-q:v', '15', localBlurPath,
@@ -97,6 +184,7 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
     if (generateHls) {
       jobService.updateJobStatus(jobId, 'PROCESSING', 0);
       
+      if (fs.existsSync(outputDir)) fs.rmSync(outputDir, { recursive: true, force: true });
       fs.mkdirSync(outputDir, { recursive: true });
       ['stream_0', 'stream_1', 'stream_2'].forEach((dir) => {
         fs.mkdirSync(path.join(outputDir, dir), { recursive: true });
@@ -216,6 +304,9 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
     if (activeInputPath && fs.existsSync(activeInputPath)) {
       fs.unlink(activeInputPath, () => {});
     }
+    if (downloadedSourcePath && downloadedSourcePath !== activeInputPath && fs.existsSync(downloadedSourcePath)) {
+      fs.unlink(downloadedSourcePath, () => {});
+    }
     if (localThumbPath && fs.existsSync(localThumbPath)) {
       fs.unlink(localThumbPath, () => {});
     }
@@ -224,6 +315,9 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
     }
     if (fs.existsSync(outputDir)) {
       fs.rm(outputDir, { recursive: true, force: true }, () => {});
+    }
+    if (fs.existsSync(compositionDir)) {
+      fs.rm(compositionDir, { recursive: true, force: true }, () => {});
     }
   }
 };

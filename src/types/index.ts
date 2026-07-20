@@ -25,12 +25,28 @@ export interface AppConfig {
 
 export type JobStatus = 'PENDING' | 'DOWNLOADING' | 'PROCESSING' | 'UPLOADING' | 'COMPLETED' | 'FAILED';
 
+export interface RecordingCompositionSegment {
+  offset: number;
+  length: number;
+  durationMs: number;
+  speed: 1 | 2;
+  facingMode: 'user' | 'environment';
+}
+
+export interface RecordingComposition {
+  version: 1;
+  totalBytes: number;
+  totalSourceDurationMs: number;
+  segments: RecordingCompositionSegment[];
+}
+
 export interface RemoteProcessOptions {
   generateHls?: boolean;
   generateThumbnail?: boolean;
   generateBlur?: boolean;
   facingMode?: 'user' | 'environment';
   thumbnailTime?: number;
+  composition?: RecordingComposition;
 }
 
 export interface RemoteProcessPayload {

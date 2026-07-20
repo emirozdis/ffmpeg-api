@@ -6,6 +6,7 @@ import { queueService } from '../services/queue.service';
 import { catchAsync } from '../utils/catchAsync';
 import { logger } from '../utils/logger';
 import { config } from '../config/env';
+import { validateComposition } from '../utils/composition';
 
 const SAFE_ID = /^[a-zA-Z0-9_-]{8,128}$/;
 const SOURCE_FILE = /^([a-zA-Z0-9_-]{8,128})-media\.(mp4|mov|m4v|webm)$/i;
@@ -132,6 +133,7 @@ export const processRemoteVideo = catchAsync(async (req: Request, res: Response)
     generateBlur: safeOptions.generateBlur as boolean | undefined,
     facingMode: safeOptions.facingMode as 'user' | 'environment' | undefined,
     thumbnailTime: safeOptions.thumbnailTime as number | undefined,
+    composition: validateComposition(safeOptions.composition),
   };
   if (webhookPayload !== undefined && (typeof webhookPayload !== 'string' || webhookPayload.length > 4096)) {
     throw new AppError('Invalid webhook payload.', 400);
