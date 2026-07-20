@@ -7,6 +7,7 @@ import { catchAsync } from '../utils/catchAsync';
 import { logger } from '../utils/logger';
 import { config } from '../config/env';
 import { validateComposition } from '../utils/composition';
+import { validateStorageBucket } from '../utils/storage';
 
 const SAFE_ID = /^[a-zA-Z0-9_-]{8,128}$/;
 const SOURCE_FILE = /^([a-zA-Z0-9_-]{8,128})-media\.(mp4|mov|m4v|webm)$/i;
@@ -111,9 +112,7 @@ export const processRemoteVideo = catchAsync(async (req: Request, res: Response)
   if (typeof jobId !== 'string' || !SAFE_ID.test(jobId)) {
     throw new AppError('Invalid idempotent job identifier.', 400);
   }
-  if (bucket !== config.R2_BUCKET_NAME) {
-    throw new AppError('Storage bucket is not allowlisted.', 400);
-  }
+  const safeBucket = validateStorageBucket(bucket);
   if (!options || typeof options !== 'object' || Array.isArray(options)) {
     throw new AppError('Invalid remote processing options.', 400);
   }
@@ -150,13 +149,13 @@ export const processRemoteVideo = catchAsync(async (req: Request, res: Response)
   const safeWebhookUrl = validateWebhookUrl(webhookUrl);
   validateRemoteStoragePaths({ jobId, sourceKey, outputDirKey, thumbnailKey, blurKey, options: sanitizedOptions });
 
-  logger.info(`Remote processing request received for s3://${bucket}/${sourceKey}`, { ip: req.ip });
+  logger.info(`Remote processing request received for s3://${safeBucket}/${sourceKey}`, { ip: req.ip });
 
   const existingJob = jobId ? jobService.getJob(jobId) : undefined;
   const job = jobService.createRemoteJob(
     path.basename(sourceKey),
     {
-      bucket,
+      bucket: safeBucket,
       sourceKey,
       outputDirKey,
       thumbnailKey,

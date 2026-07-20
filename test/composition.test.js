@@ -12,6 +12,7 @@ process.env.STATE_DIR = path.join(testRoot, 'state');
 
 const { composeRecordingSegments } = require('../dist/services/transcode.service.js');
 const { validateComposition } = require('../dist/utils/composition.js');
+const { validateStorageBucket } = require('../dist/utils/storage.js');
 
 function run(command, args) {
   return childProcess.execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -40,6 +41,13 @@ test('validates contiguous segment byte ranges', () => {
       { offset: 11, length: 10, durationMs: 1_000, speed: 2, facingMode: 'environment' },
     ],
   }), /invalid recording composition segment/i);
+});
+
+test('accepts a validated bucket from the incoming request', () => {
+  assert.equal(validateStorageBucket('myturn-dev'), 'myturn-dev');
+  assert.equal(validateStorageBucket('media.vlogs-2026'), 'media.vlogs-2026');
+  assert.throws(() => validateStorageBucket('../myturn-dev'), /invalid storage bucket/i);
+  assert.throws(() => validateStorageBucket('MyTurn-Dev'), /invalid storage bucket/i);
 });
 
 test('extracts, speeds, and concatenates mixed recording segments', async (t) => {
