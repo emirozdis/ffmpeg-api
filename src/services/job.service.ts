@@ -42,7 +42,19 @@ class JobService {
   public createRemoteJob(originalFileName: string, payload: RemoteProcessPayload, requestedId?: string): TranscodeJob {
     const id = requestedId || uuidv4();
     const existing = this.jobs.get(id);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.status === 'COMPLETED' || existing.status === 'FAILED') {
+        existing.status = 'PENDING';
+        existing.progress = 0;
+        existing.error = null;
+        existing.outputPath = null;
+        existing.originalFileName = originalFileName;
+        existing.remotePayload = payload;
+        existing.updatedAt = new Date();
+        this.persist();
+      }
+      return existing;
+    }
 
     const newJob: TranscodeJob = {
       id,

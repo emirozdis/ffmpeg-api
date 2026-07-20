@@ -11,10 +11,21 @@ test('accepts snippet-response sources inside the responses namespace', () => {
     jobId,
     sourceKey: `vlogs/${groupId}/${assignmentId}/responses/7b103ad9-d8c6-4f54-980e-b21c41f8bb39.mp4`,
     outputDirKey: `vlogs/${groupId}/${assignmentId}/responses/${jobId}_hls`,
-    thumbnailKey: undefined,
-    blurKey: undefined,
-    options: { generateHls: true, generateThumbnail: false, generateBlur: false },
+    thumbnailKey: `vlogs/${groupId}/${assignmentId}/responses/7b103ad9-d8c6-4f54-980e-b21c41f8bb39-thumb.jpg`,
+    blurKey: `vlogs/${groupId}/${assignmentId}/responses/7b103ad9-d8c6-4f54-980e-b21c41f8bb39-thumb-blur.jpg`,
+    options: { generateHls: true, generateThumbnail: true, generateBlur: true },
   }));
+});
+
+test('rejects snippet-response thumbnails outside the source namespace', () => {
+  assert.throws(() => validateRemoteStoragePaths({
+    jobId,
+    sourceKey: `vlogs/${groupId}/${assignmentId}/responses/7b103ad9-d8c6-4f54-980e-b21c41f8bb39.mp4`,
+    outputDirKey: `vlogs/${groupId}/${assignmentId}/responses/${jobId}_hls`,
+    thumbnailKey: `vlogs/${groupId}/${assignmentId}/responses/${jobId}-thumb.jpg`,
+    blurKey: `vlogs/${groupId}/${assignmentId}/responses/${jobId}-thumb-blur.jpg`,
+    options: { generateHls: true, generateThumbnail: true, generateBlur: true },
+  }), /Invalid thumbnail storage key/);
 });
 
 test('rejects response sources outside the responses namespace', () => {

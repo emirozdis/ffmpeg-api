@@ -42,9 +42,6 @@ export function validateRemoteStoragePaths(input: {
   if (generateHls && input.outputDirKey !== `${prefix}${input.jobId}_hls`) {
     throw new AppError('Invalid HLS output storage key.', 400);
   }
-  if (isResponse && (generateThumbnail || generateBlur)) {
-    throw new AppError('Response video thumbnails are not supported.', 400);
-  }
   if (generateThumbnail && input.thumbnailKey !== `${prefix}${mediaId}-thumb.jpg`) {
     throw new AppError('Invalid thumbnail storage key.', 400);
   }

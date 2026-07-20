@@ -102,6 +102,7 @@ export const processRemoteVideo = catchAsync(async (req: Request, res: Response)
   logger.info(`Remote processing request received for s3://${safeBucket}/${sourceKey}`, { ip: req.ip });
 
   const existingJob = jobId ? jobService.getJob(jobId) : undefined;
+  const shouldEnqueue = !existingJob || existingJob.status === 'COMPLETED' || existingJob.status === 'FAILED';
   const job = jobService.createRemoteJob(
     path.basename(sourceKey),
     {
@@ -117,7 +118,7 @@ export const processRemoteVideo = catchAsync(async (req: Request, res: Response)
     jobId,
   );
 
-  if (!existingJob) queueService.enqueue(job.id);
+  if (shouldEnqueue) queueService.enqueue(job.id);
 
   res.status(202).json({
     status: 'success',
