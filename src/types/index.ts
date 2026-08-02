@@ -2,6 +2,8 @@
 
 export interface AppConfig {
   PORT: number;
+  HOST: string;
+  ENABLE_VAST_SERVERLESS: boolean;
   API_KEY: string;
   WEBHOOK_SECRET: string;
   UPLOAD_DIR: string;
@@ -14,6 +16,9 @@ export interface AppConfig {
   AUTO_SCALE_CONCURRENCY: boolean;
   MIN_CONCURRENT_JOBS: number;
   MAX_CONCURRENT_JOBS_CAP: number;
+  VIDEO_ENCODER: 'libx264' | 'h264_nvenc';
+  NVENC_PRESET: string;
+  NVENC_TUNE: string;
   
   // Cloudflare R2 Integration
   R2_ACCOUNT_ID: string;

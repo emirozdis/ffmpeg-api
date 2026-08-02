@@ -18,6 +18,11 @@ const ALLOWED_WEBHOOK_ORIGINS = configuredWebhookOrigins.length > 0
     ? []
     : ['http://localhost:3000'];
 
+const configuredVideoEncoder = process.env.VIDEO_ENCODER || 'libx264';
+if (!['libx264', 'h264_nvenc'].includes(configuredVideoEncoder)) {
+  throw new Error('VIDEO_ENCODER must be either libx264 or h264_nvenc');
+}
+
 // Ensure storage directories exist immediately
 [UPLOAD_DIR, PROCESSED_DIR, STATE_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
@@ -27,6 +32,8 @@ const ALLOWED_WEBHOOK_ORIGINS = configuredWebhookOrigins.length > 0
 
 export const config: AppConfig = {
   PORT: parseInt(process.env.PORT || '3000', 10),
+  HOST: process.env.HOST || '0.0.0.0',
+  ENABLE_VAST_SERVERLESS: process.env.ENABLE_VAST_SERVERLESS === 'true',
   // Fail closed when credentials are absent; never ship a shared fallback key.
   API_KEY: process.env.API_KEY || '',
   WEBHOOK_SECRET: process.env.TRANSCODER_WEBHOOK_SECRET || '',
@@ -40,6 +47,9 @@ export const config: AppConfig = {
   AUTO_SCALE_CONCURRENCY: process.env.AUTO_SCALE_CONCURRENCY !== 'false',
   MIN_CONCURRENT_JOBS: parseInt(process.env.MIN_CONCURRENT_JOBS || '1', 10),
   MAX_CONCURRENT_JOBS_CAP: parseInt(process.env.MAX_CONCURRENT_JOBS_CAP || '8', 10),
+  VIDEO_ENCODER: configuredVideoEncoder as 'libx264' | 'h264_nvenc',
+  NVENC_PRESET: process.env.NVENC_PRESET || 'p4',
+  NVENC_TUNE: process.env.NVENC_TUNE || 'hq',
 
   // R2 Credentials
   R2_ACCOUNT_ID: process.env.CLOUDFLARE_R2_ACCOUNT_ID || '',

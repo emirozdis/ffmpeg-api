@@ -191,6 +191,21 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       });
 
       await new Promise<void>((resolve, reject) => {
+        const videoEncoder = config.VIDEO_ENCODER;
+        const encoderOptions = (streamIndex: number): string[] => videoEncoder === 'h264_nvenc'
+          ? [
+              `-preset:v:${streamIndex}`, config.NVENC_PRESET,
+              `-tune:v:${streamIndex}`, config.NVENC_TUNE,
+              `-profile:v:${streamIndex}`, 'high',
+              `-pix_fmt:v:${streamIndex}`, 'yuv420p',
+              `-spatial-aq:v:${streamIndex}`, '1',
+              `-forced-idr:v:${streamIndex}`, '1',
+            ]
+          : [
+              `-preset:v:${streamIndex}`, 'veryfast',
+              `-profile:v:${streamIndex}`, 'high',
+              `-pix_fmt:v:${streamIndex}`, 'yuv420p',
+            ];
         const filterComplex = [
           '[0:v]split=3[v1][v2][v3]',
           '[v1]scale=-2:1920[v1out]', 
@@ -200,12 +215,12 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
 
         const outputOptions: string[] = [
           '-threads', '0',
-          '-preset', 'veryfast',
           '-filter_complex', filterComplex,
           
-          '-map', '[v1out]', '-c:v:0', 'libx264', '-b:v:0', '4500k', '-maxrate:v:0', '5000k', '-bufsize:v:0', '9000k',
-          '-map', '[v2out]', '-c:v:1', 'libx264', '-b:v:1', '2500k', '-maxrate:v:1', '2700k', '-bufsize:v:1', '5000k',
-          '-map', '[v3out]', '-c:v:2', 'libx264', '-b:v:2', '1200k', '-maxrate:v:2', '1400k', '-bufsize:v:2', '2400k',
+          '-map', '[v1out]', '-c:v:0', videoEncoder, ...encoderOptions(0), '-b:v:0', '4500k', '-maxrate:v:0', '5000k', '-bufsize:v:0', '9000k',
+          '-map', '[v2out]', '-c:v:1', videoEncoder, ...encoderOptions(1), '-b:v:1', '2500k', '-maxrate:v:1', '2700k', '-bufsize:v:1', '5000k',
+          '-map', '[v3out]', '-c:v:2', videoEncoder, ...encoderOptions(2), '-b:v:2', '1200k', '-maxrate:v:2', '1400k', '-bufsize:v:2', '2400k',
+          '-force_key_frames', 'expr:gte(t,n_forced*4)',
         ];
 
         if (hasAudio) {

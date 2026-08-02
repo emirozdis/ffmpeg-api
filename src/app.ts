@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import { logger } from './utils/logger';
 import videoRoutes from './routes/video.routes';
 import systemRoutes from './routes/system.routes'; // Import the system routes
+import serverlessRoutes from './routes/serverless.routes';
+import { config } from './config/env';
 import { errorHandler } from './middlewares/error.middleware';
 
 const app = express();
@@ -37,6 +39,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // API Routes
+if (config.ENABLE_VAST_SERVERLESS) app.use('/', serverlessRoutes);
 app.use('/api/v1/videos', videoRoutes);
 app.use('/api/v1/system', systemRoutes); // Mount the system routes
 

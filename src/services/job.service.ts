@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { config } from '../config/env';
 import { TranscodeJob, JobStatus, RemoteProcessPayload } from '../types';
 import { logger } from '../utils/logger';
@@ -22,7 +22,7 @@ class JobService {
   }
 
   public createJob(originalFileName: string, inputPath: string): TranscodeJob {
-    const id = uuidv4();
+    const id = randomUUID();
     const newJob: TranscodeJob = {
       id,
       status: 'PENDING',
@@ -40,7 +40,7 @@ class JobService {
   }
 
   public createRemoteJob(originalFileName: string, payload: RemoteProcessPayload, requestedId?: string): TranscodeJob {
-    const id = requestedId || uuidv4();
+    const id = requestedId || randomUUID();
     const existing = this.jobs.get(id);
     if (existing) {
       if (existing.status === 'COMPLETED' || existing.status === 'FAILED') {

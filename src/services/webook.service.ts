@@ -50,4 +50,5 @@ export const sendWebhook = async (url: string, payload: unknown): Promise<void> 
   }
 
   logger.error(`[Webhook] Delivery failed for ${eventId}: ${lastError?.message}`);
+  throw lastError || new Error('Webhook delivery failed');
 };

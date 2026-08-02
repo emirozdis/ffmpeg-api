@@ -27,6 +27,9 @@ Before starting the server, ensure your hosting environment has the following sy
 
 ## Quick Start
 
+For Vast scale-to-zero, use [`docs/vast-serverless.md`](docs/vast-serverless.md).
+For an ordinary always-on Vast instance, use [`docs/vast-ai.md`](docs/vast-ai.md).
+
 ### 1. Installation
 
 Clone the repository and install dependency components:

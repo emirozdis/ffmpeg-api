@@ -1,0 +1,15 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+.DS_Store
+node_modules
+dist
+storage
+*.log
+npm-debug.log*
+__pycache__
+*.pyc
+README.MD
+test

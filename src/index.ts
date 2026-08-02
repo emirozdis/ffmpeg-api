@@ -29,12 +29,13 @@ const startDiagnostics = () => {
   logger.info(` • CPU Cores   : ${hw.cpu.physicalCores} Physical / ${hw.cpu.logicalCores} Logical @ ${hw.cpu.speedMhz}Mhz`);
   logger.info(` • System RAM  : ${hw.ram.totalGigabytes} GB Total (${hw.ram.availableGigabytes} GB Free)`);
   logger.info(` • GPU Device  : ${gpuStatus}`);
+  logger.info(` • HLS Encoder : ${config.VIDEO_ENCODER}`);
   logger.info(` • FFmpeg      : ${ffmpegStatus}`);
   logger.info(` • FFprobe     : ${ffprobeStatus}`);
   logger.info('========================================================================');
 };
 
-const server = app.listen(config.PORT, () => {
+const server = app.listen(config.PORT, config.HOST, () => {
   // Initialize start metrics benchmark timestamp
   metricsRecorder.setTotalStartTime(Date.now());
 
@@ -44,7 +45,10 @@ const server = app.listen(config.PORT, () => {
   // Start the background load balancer
   loadMonitor.start();
 
-  logger.info(`Video Pipeline Service is running on http://localhost:${config.PORT}`, { port: config.PORT });
+  logger.info(`Video Pipeline Service is running on http://${config.HOST}:${config.PORT}`, {
+    host: config.HOST,
+    port: config.PORT,
+  });
   logger.debug(`Uploads dir: ${config.UPLOAD_DIR}`, { dir: config.UPLOAD_DIR });
   logger.debug(`Processed dir: ${config.PROCESSED_DIR}`, { dir: config.PROCESSED_DIR });
   logger.debug(`State dir: ${config.STATE_DIR}`, { dir: config.STATE_DIR });
