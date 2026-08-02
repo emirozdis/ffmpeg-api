@@ -48,8 +48,11 @@ export const config: AppConfig = {
   MIN_CONCURRENT_JOBS: parseInt(process.env.MIN_CONCURRENT_JOBS || '1', 10),
   MAX_CONCURRENT_JOBS_CAP: parseInt(process.env.MAX_CONCURRENT_JOBS_CAP || '8', 10),
   VIDEO_ENCODER: configuredVideoEncoder as 'libx264' | 'h264_nvenc',
-  NVENC_PRESET: process.env.NVENC_PRESET || 'p4',
+  NVENC_PRESET: process.env.NVENC_PRESET || 'p3',
   NVENC_TUNE: process.env.NVENC_TUNE || 'hq',
+  CUDA_DEVICE: parseInt(process.env.CUDA_DEVICE || '0', 10),
+  REQUIRE_CUDA_PIPELINE: process.env.REQUIRE_CUDA_PIPELINE === 'true',
+  GPU_TELEMETRY_INTERVAL_MS: parseInt(process.env.GPU_TELEMETRY_INTERVAL_MS || '5000', 10),
 
   // R2 Credentials
   R2_ACCOUNT_ID: process.env.CLOUDFLARE_R2_ACCOUNT_ID || '',

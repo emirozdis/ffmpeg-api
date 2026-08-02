@@ -19,6 +19,9 @@ export interface AppConfig {
   VIDEO_ENCODER: 'libx264' | 'h264_nvenc';
   NVENC_PRESET: string;
   NVENC_TUNE: string;
+  CUDA_DEVICE: number;
+  REQUIRE_CUDA_PIPELINE: boolean;
+  GPU_TELEMETRY_INTERVAL_MS: number;
   
   // Cloudflare R2 Integration
   R2_ACCOUNT_ID: string;

@@ -42,6 +42,32 @@ export class HealthChecker {
     this.checkProcessedDir();
     this.checkStateDir();
     this.checkGpu();
+    this.checkGpuPipeline();
+
+    const counts = this.checks.reduce<Record<CheckStatus, number>>((summary, check) => {
+      summary[check.status] += 1;
+      return summary;
+    }, { pass: 0, warn: 0, fail: 0, critical: 0 });
+
+    for (const check of this.checks) {
+      const context = {
+        check: check.name,
+        status: check.status,
+        details: check.details,
+      };
+      if (check.status === 'critical' || check.status === 'fail') {
+        logger.error(`Startup health check failed: ${check.name} — ${check.message}`, context);
+      } else if (check.status === 'warn') {
+        logger.warn(`Startup health check warning: ${check.name} — ${check.message}`, context);
+      } else {
+        logger.info(`Startup health check passed: ${check.name} — ${check.message}`, context);
+      }
+    }
+
+    logger.info('Startup health checks completed', {
+      total: this.checks.length,
+      counts,
+    });
 
     return this.checks;
   }
@@ -106,6 +132,10 @@ export class HealthChecker {
     if (!config.API_KEY) issues.push('API_KEY not configured');
     if (config.PORT < 1024 || config.PORT > 65535) issues.push(`PORT ${config.PORT} is out of valid range`);
     if (config.MAX_FILE_SIZE <= 0) issues.push('MAX_FILE_SIZE must be positive');
+    if (!Number.isInteger(config.CUDA_DEVICE) || config.CUDA_DEVICE < 0) issues.push('CUDA_DEVICE must be a non-negative integer');
+    if (!Number.isFinite(config.GPU_TELEMETRY_INTERVAL_MS) || config.GPU_TELEMETRY_INTERVAL_MS < 0) {
+      issues.push('GPU_TELEMETRY_INTERVAL_MS must be zero or a positive integer');
+    }
 
     if (issues.length > 0) {
       this.checks.push({ name: 'environment', status: 'warn', message: issues.join('; '), details: { issues } });
@@ -155,6 +185,59 @@ export class HealthChecker {
         status: 'pass',
         message: `GPU accelerator available: ${gpu.type} (h264: ${gpu.h264Encoders.join(', ')})`,
         details: { type: gpu.type, encoders: gpu.h264Encoders },
+      });
+    }
+  }
+
+  private checkGpuPipeline(): void {
+    if (config.VIDEO_ENCODER !== 'h264_nvenc') {
+      this.checks.push({
+        name: 'gpu-pipeline',
+        status: config.REQUIRE_CUDA_PIPELINE ? 'fail' : 'pass',
+        message: config.REQUIRE_CUDA_PIPELINE
+          ? 'REQUIRE_CUDA_PIPELINE requires VIDEO_ENCODER=h264_nvenc'
+          : 'CUDA pipeline is disabled for the configured software encoder',
+      });
+      return;
+    }
+
+    try {
+      const hwaccels = execSync('ffmpeg -hide_banner -hwaccels 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
+      const filters = execSync('ffmpeg -hide_banner -filters 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
+      const encoders = execSync('ffmpeg -hide_banner -encoders 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
+      const missing = [
+        !/^cuda$/m.test(hwaccels) ? 'cuda hwaccel' : '',
+        !/\bscale_cuda\b/.test(filters) ? 'scale_cuda filter' : '',
+        !/\bh264_nvenc\b/.test(encoders) ? 'h264_nvenc encoder' : '',
+      ].filter(Boolean);
+
+      if (missing.length > 0) {
+        this.checks.push({
+          name: 'gpu-pipeline',
+          status: config.REQUIRE_CUDA_PIPELINE ? 'fail' : 'warn',
+          message: `Missing FFmpeg GPU capabilities: ${missing.join(', ')}`,
+          details: { missing, device: config.CUDA_DEVICE },
+        });
+        return;
+      }
+
+      this.checks.push({
+        name: 'gpu-pipeline',
+        status: 'pass',
+        message: `NVDEC/CUDA/NVENC pipeline is available on CUDA device ${config.CUDA_DEVICE}`,
+        details: {
+          device: config.CUDA_DEVICE,
+          decode: 'NVDEC via -hwaccel cuda',
+          scale: 'scale_cuda',
+          encode: 'h264_nvenc',
+        },
+      });
+    } catch (error) {
+      this.checks.push({
+        name: 'gpu-pipeline',
+        status: config.REQUIRE_CUDA_PIPELINE ? 'fail' : 'warn',
+        message: `Unable to inspect FFmpeg GPU capabilities: ${error instanceof Error ? error.message : String(error)}`,
+        details: { device: config.CUDA_DEVICE },
       });
     }
   }

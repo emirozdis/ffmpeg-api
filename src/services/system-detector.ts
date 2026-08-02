@@ -56,6 +56,33 @@ function detectFfmpeg(): FfmpegInfo {
   return { version, ffprobeVersion, installed, ffprobeInstalled };
 }
 
+export function classifyFfmpegEncoders(encoders: string): GpuInfo {
+  const names = encoders
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/)[1])
+    .filter((name): name is string => !!name);
+  const h264Encoders = names.filter((name) => name.startsWith('h264_'));
+  const hevcEncoders = names.filter((name) => name.startsWith('hevc_'));
+  const aacEncoders = names.filter((name) => name === 'aac' || name.startsWith('aac_'));
+  const allVideoEncoders = [...h264Encoders, ...hevcEncoders];
+
+  // Prefer the explicitly configured production accelerator instead of the
+  // first encoder in FFmpeg's alphabetically ordered output.
+  let gpuType: GpuType = 'none';
+  if (allVideoEncoders.some((name) => name.includes('nvenc'))) gpuType = 'nvenc';
+  else if (allVideoEncoders.some((name) => name.includes('videotoolbox'))) gpuType = 'videotoolbox';
+  else if (allVideoEncoders.some((name) => name.includes('qsv'))) gpuType = 'qsv';
+  else if (allVideoEncoders.some((name) => name.includes('vaapi') || name.includes('v4l2'))) gpuType = 'vaapi';
+
+  return {
+    type: gpuType,
+    available: gpuType !== 'none',
+    h264Encoders: h264Encoders.length > 0 ? h264Encoders : ['libx264'],
+    hevcEncoders,
+    aacEncoders: aacEncoders.length > 0 ? aacEncoders : ['aac'],
+  };
+}
+
 function detectGpu(ffmpegInstalled: boolean): GpuInfo {
   if (!ffmpegInstalled) {
     return { type: 'none', available: false, h264Encoders: [], hevcEncoders: [], aacEncoders: [] };
@@ -63,47 +90,7 @@ function detectGpu(ffmpegInstalled: boolean): GpuInfo {
 
   try {
     const encoders = execSync('ffmpeg -encoders 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
-    const lines = encoders.split('\n').map((l) => l.trim().split(/\s+/)).filter(Boolean);
-
-    const h264Encoders: string[] = [];
-    const hevcEncoders: string[] = [];
-    const aacEncoders: string[] = [];
-    let gpuType: GpuType = 'none';
-
-    for (const parts of lines) {
-      const name = parts[1];
-      if (!name) continue;
-
-      if (name.includes('videotoolbox')) {
-        h264Encoders.push(name);
-        hevcEncoders.push(name);
-        gpuType = gpuType === 'none' ? 'videotoolbox' : gpuType;
-      }
-      if (name.includes('nvenc')) {
-        h264Encoders.push(name);
-        hevcEncoders.push(name);
-        aacEncoders.push(name);
-        gpuType = gpuType === 'none' ? 'nvenc' : gpuType;
-      }
-      if (name.includes('vaapi') || name.includes('v4l2')) {
-        h264Encoders.push(name);
-        hevcEncoders.push(name);
-        gpuType = gpuType === 'none' ? 'vaapi' : gpuType;
-      }
-      if (name.includes('qsv')) {
-        h264Encoders.push(name);
-        hevcEncoders.push(name);
-        gpuType = gpuType === 'none' ? 'qsv' : gpuType;
-      }
-    }
-
-    return {
-      type: gpuType,
-      available: gpuType !== 'none',
-      h264Encoders: h264Encoders.length > 0 ? h264Encoders : ['libx264'],
-      hevcEncoders: hevcEncoders.length > 0 ? hevcEncoders : [],
-      aacEncoders: aacEncoders.length > 0 ? aacEncoders : ['aac'],
-    };
+    return classifyFfmpegEncoders(encoders);
   } catch {
     return { type: 'none', available: false, h264Encoders: [], hevcEncoders: [], aacEncoders: [] };
   }

@@ -167,7 +167,12 @@ export class MetricsRecorder {
       for (const entry of entries) {
         if (entry.isFile()) {
           try {
-            total += fs.statSync(path.join(dirPath, entry.path)).size;
+            // With recursive readdir, Dirent.path is the containing directory;
+            // the previous implementation omitted entry.name and always
+            // measured a directory/non-existent path.
+            const portableEntry = entry as fs.Dirent & { parentPath?: string; path?: string };
+            const parentPath = portableEntry.parentPath ?? portableEntry.path ?? dirPath;
+            total += fs.statSync(path.join(parentPath, entry.name)).size;
           } catch {
             // skip
           }

@@ -273,7 +273,10 @@ export class Logger {
     const levelStr = entry.level.toUpperCase().padEnd(5);
     const corr = entry.correlationId ? ` [${entry.correlationId}]` : '';
     const ctx = entry.context ? ` ${JSON.stringify(entry.context)}` : '';
-    return `${ts} [${levelStr}] ${this.service}${corr} ${entry.message}${ctx}`;
+    // Docker/Vast collect console output as newline-delimited records. Without
+    // the terminator, production logs are concatenated and may remain buffered
+    // in the instance log viewer until another process flushes the stream.
+    return `${ts} [${levelStr}] ${this.service}${corr} ${entry.message}${ctx}\n`;
   }
 
   // --- lifecycle --------------------------------------------------------

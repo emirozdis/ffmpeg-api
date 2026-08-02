@@ -21,22 +21,29 @@ RUN apt-get update \
 
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.title="MyTurn GPU Transcoder" \
-      org.opencontainers.image.description="NVENC HLS transcoding worker for Cloudflare R2" \
+      org.opencontainers.image.description="Always-on NVENC HLS transcoding API for a stable GPU instance" \
       org.opencontainers.image.source="https://github.com/emirozdis/ffmpeg-api" \
-      org.opencontainers.image.revision="$VCS_REF"
+      org.opencontainers.image.revision="$VCS_REF" \
+      org.opencontainers.image.variant="vast-stable"
 
 WORKDIR /app
 
 ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
     PORT=3000 \
+    ENABLE_VAST_SERVERLESS=false \
+    REQUIRE_RUNTIME_CONFIG=true \
     UPLOAD_DIR=/data/uploads \
     PROCESSED_DIR=/data/processed \
     STATE_DIR=/data/state \
     LOG_FILE_PATH=/data/logs/app.log \
     VIDEO_ENCODER=h264_nvenc \
-    NVENC_PRESET=p4 \
+    NVENC_PRESET=p3 \
     NVENC_TUNE=hq \
     REQUIRE_NVENC=true \
+    REQUIRE_CUDA_PIPELINE=true \
+    CUDA_DEVICE=0 \
+    GPU_TELEMETRY_INTERVAL_MS=5000 \
     MAX_CONCURRENT_JOBS=1 \
     MAX_CONCURRENT_JOBS_CAP=1 \
     AUTO_SCALE_CONCURRENCY=false \
@@ -56,7 +63,8 @@ EXPOSE 3000
 VOLUME ["/data/state"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||'3000')+'/api/v1/system/health',{headers:{'x-api-key':process.env.API_KEY||''}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
+STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint-gpu"]
 CMD ["node", "dist/index.js"]

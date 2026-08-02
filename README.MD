@@ -7,6 +7,7 @@ The MyTurn Video Pipeline Service is a robust, dynamic video ingestion, transcod
 ## Architecture & Features
 
 - **HLS Adaptive Bitrate Streaming Ladder**: Automatically segments video inputs into standard HLS adaptive streams (multi-variant playlists at 1080p, 720p, and 480p) optimized for dynamic mobile and web playback.
+- **End-to-End NVIDIA Pipeline**: The GPU image uses NVDEC decoding, three GPU-resident `scale_cuda` branches, and NVENC encoding, with an exact startup probe and live encoder/decoder telemetry.
 - **On-the-Fly Asset Extraction**: Extracts custom poster thumbnails and ultra-lightweight blur image placeholders with intelligent device camera mirroring correction flags (`facingMode` support).
 - **Dynamic Load balancing and Concurrency Control**: Monitors logical CPU usage, memory thresholds, and load averages to continuously scale worker concurrency counts up or down to avoid runtime bottlenecks.
 - **S3-Compatible Cloudflare R2 Pipeline**: Downloads source files and streams processed assets back into remote R2 buckets, followed by secure disk garbage collection of local file workspaces.
@@ -27,8 +28,13 @@ Before starting the server, ensure your hosting environment has the following sy
 
 ## Quick Start
 
-For Vast scale-to-zero, use [`docs/vast-serverless.md`](docs/vast-serverless.md).
-For an ordinary always-on Vast instance, use [`docs/vast-ai.md`](docs/vast-ai.md).
+For an ordinary always-on Vast instance, use [`Dockerfile.gpu`](Dockerfile.gpu)
+and follow [`docs/vast-ai.md`](docs/vast-ai.md). This is the same authenticated
+HTTP worker contract used by a persistent Coolify deployment and does not need
+`REPORT_ADDR` or any other PyWorker metadata.
+
+For Vast scale-to-zero only, use [`Dockerfile.serverless`](Dockerfile.serverless)
+and [`docs/vast-serverless.md`](docs/vast-serverless.md).
 
 ### 1. Installation
 
@@ -59,6 +65,14 @@ MAX_CONCURRENT_JOBS_CAP=8
 AUTO_SCALE_CONCURRENCY=true
 MONITOR_INTERVAL_MS=5000
 METRICS_BUFFER_SIZE=100
+
+# NVIDIA GPU image. p3 provides a fast, phone-friendly quality balance.
+VIDEO_ENCODER=h264_nvenc
+NVENC_PRESET=p3
+NVENC_TUNE=hq
+REQUIRE_CUDA_PIPELINE=true
+CUDA_DEVICE=0
+GPU_TELEMETRY_INTERVAL_MS=5000
 
 # Cloudflare R2 Storage Credentials
 CLOUDFLARE_R2_ACCOUNT_ID=your-r2-account-id
