@@ -29,6 +29,8 @@ export interface AppConfig {
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
   R2_BUCKET_NAME: string;
+  R2_UPLOAD_CONCURRENCY: number;
+  R2_UPLOAD_POLL_MS: number;
   ALLOWED_WEBHOOK_ORIGINS: string[];
 }
 

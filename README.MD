@@ -8,9 +8,9 @@ The MyTurn Video Pipeline Service is a robust, dynamic video ingestion, transcod
 
 - **HLS Adaptive Bitrate Streaming Ladder**: Automatically segments video inputs into standard HLS adaptive streams (multi-variant playlists at 1080p, 720p, and 480p) optimized for dynamic mobile and web playback.
 - **Adaptive NVIDIA Pipeline**: The GPU image prefers NVDEC, then safely falls back to software decode plus CUDA upload when NVDEC is unavailable. Scaling and all three encodes remain GPU-resident, with an exact startup probe and live telemetry.
-- **On-the-Fly Asset Extraction**: Extracts custom poster thumbnails and ultra-lightweight blur image placeholders with intelligent device camera mirroring correction flags (`facingMode` support).
+- **Single-Decode Asset Extraction**: Produces the poster thumbnail and blur placeholder from one decoded video frame, including intelligent camera mirroring correction (`facingMode` support).
 - **Dynamic Load balancing and Concurrency Control**: Monitors logical CPU usage, memory thresholds, and load averages to continuously scale worker concurrency counts up or down to avoid runtime bottlenecks.
-- **S3-Compatible Cloudflare R2 Pipeline**: Downloads source files and streams processed assets back into remote R2 buckets, followed by secure disk garbage collection of local file workspaces.
+- **Incremental Cloudflare R2 Pipeline**: Uploads atomically completed HLS segments while FFmpeg is still encoding, publishes playlists only after completion, and enforces bounded upload concurrency.
 - **Automated Webhook Notifications**: Dispatches rich event payloads (`Saved`, `Error`) to configurable target endpoints upon job completion or execution failures.
 - **Self-Diagnostic Health Monitoring**: Real-time evaluation of underlying hardware parameters, GPU encoder availability (NVENC, VideoToolbox, VAAPI, QSV), and read/write directories.
 
@@ -20,8 +20,8 @@ The MyTurn Video Pipeline Service is a robust, dynamic video ingestion, transcod
 
 Before starting the server, ensure your hosting environment has the following system dependencies installed and available in your global environment PATH:
 
-1. **Node.js** (v18.x or later recommended)
-2. **FFmpeg** (configured with the required library encoders like `libx264` and `aac`)
+1. **Node.js** (v22.x or later recommended)
+2. **FFmpeg** (v7.1+ with `h264_cuvid`, `h264_nvenc`, `scale_cuda`, `hwupload_cuda`, `libx264`, and `aac`)
 3. **FFprobe** (packaged typically alongside standard FFmpeg installations)
 
 ---
@@ -79,6 +79,9 @@ GPU_TELEMETRY_INTERVAL_MS=5000
 CLOUDFLARE_R2_ACCOUNT_ID=your-r2-account-id
 CLOUDFLARE_R2_ACCESS_KEY_ID=your-r2-access-key-id
 CLOUDFLARE_R2_SECRET_ACCESS_KEY=your-r2-secret-access-key
+CLOUDFLARE_R2_BUCKET_NAME=vlogs
+R2_UPLOAD_CONCURRENCY=10
+R2_UPLOAD_POLL_MS=250
 
 # Logging Levels (silly, debug, http, info, warn, error, fatal)
 LOG_LEVEL=info

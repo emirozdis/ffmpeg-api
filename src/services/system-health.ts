@@ -136,6 +136,12 @@ export class HealthChecker {
     if (!Number.isFinite(config.GPU_TELEMETRY_INTERVAL_MS) || config.GPU_TELEMETRY_INTERVAL_MS < 0) {
       issues.push('GPU_TELEMETRY_INTERVAL_MS must be zero or a positive integer');
     }
+    if (!Number.isInteger(config.R2_UPLOAD_CONCURRENCY) || config.R2_UPLOAD_CONCURRENCY < 1) {
+      issues.push('R2_UPLOAD_CONCURRENCY must be a positive integer');
+    }
+    if (!Number.isInteger(config.R2_UPLOAD_POLL_MS) || config.R2_UPLOAD_POLL_MS < 50) {
+      issues.push('R2_UPLOAD_POLL_MS must be an integer of at least 50ms');
+    }
 
     if (issues.length > 0) {
       this.checks.push({ name: 'environment', status: 'warn', message: issues.join('; '), details: { issues } });

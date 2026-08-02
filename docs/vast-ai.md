@@ -96,6 +96,8 @@ Add non-secret settings to the template:
 -e CUDA_DEVICE=0
 -e CUDA_DECODE_MODE=auto
 -e GPU_TELEMETRY_INTERVAL_MS=5000
+-e R2_UPLOAD_CONCURRENCY=10
+-e R2_UPLOAD_POLL_MS=250
 -e MAX_CONCURRENT_JOBS=1
 -e MAX_CONCURRENT_JOBS_CAP=1
 -e AUTO_SCALE_CONCURRENCY=false
@@ -130,6 +132,13 @@ job at a time. Raise concurrency only after checking the selected GPU's
 encode-session capacity and observing memory/throughput. While a job is active,
 the worker logs overall GPU, encoder, decoder, memory, and power telemetry every
 five seconds.
+
+The stable GPU image uses Node 22 and FFmpeg 7.1 or newer. Its build fails if
+H.264 CUVID/NVDEC, H.264 NVENC, `scale_cuda`, or `hwupload_cuda` is missing.
+Thumbnail and blur outputs share one video-frame decode. During HLS encoding,
+completed segments are atomically renamed and uploaded to R2 with at most
+`R2_UPLOAD_CONCURRENCY` active requests; variant and master playlists are
+published only after FFmpeg completes.
 
 ## 4. Connect the backend
 
@@ -190,6 +199,9 @@ health request should report HTTP `200`, environment checks, and an available
 GPU. Startup logs should contain `HLS Encoder : h264_nvenc`. Submit one real remote
 job and confirm that the R2 output contains `master.m3u8`, all three variant
 playlists, and their segments, followed by a successful signed webhook.
+Active-job logs should show `Incremental HLS upload started`, per-segment debug
+records when `LOG_LEVEL=debug`, and `Incremental HLS upload completed` before
+the completion webhook.
 
 The queue state lives in `/data/state`. It survives process restarts only when
 that path is backed by storage that survives the restart. Destroying a rented

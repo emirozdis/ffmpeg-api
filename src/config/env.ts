@@ -64,5 +64,7 @@ export const config: AppConfig = {
   R2_ACCESS_KEY_ID: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '',
   R2_SECRET_ACCESS_KEY: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '',
   R2_BUCKET_NAME: process.env.CLOUDFLARE_R2_BUCKET_NAME || 'vlogs',
+  R2_UPLOAD_CONCURRENCY: parseInt(process.env.R2_UPLOAD_CONCURRENCY || '10', 10),
+  R2_UPLOAD_POLL_MS: parseInt(process.env.R2_UPLOAD_POLL_MS || '250', 10),
   ALLOWED_WEBHOOK_ORIGINS,
 };

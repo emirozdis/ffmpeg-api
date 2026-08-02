@@ -8,13 +8,54 @@ import { config } from '../config/env';
 import { jobService } from './job.service';
 import { metricsRecorder } from './metrics-recorder';
 import { logger } from '../utils/logger';
-import { downloadFileFromR2, uploadDirectoryToR2, uploadFileToR2 } from './r2.service';
+import {
+  downloadFileFromR2,
+  IncrementalDirectoryUpload,
+  startIncrementalDirectoryUpload,
+  uploadDirectoryToR2,
+  uploadFileToR2,
+} from './r2.service';
 import { sendWebhook } from './webook.service';
 import { RecordingComposition } from '../types';
 
 interface VideoMetadata {
   hasAudio: boolean;
   durationMs: number;
+}
+
+interface ImageDerivativePlanOptions {
+  inputPath: string;
+  thumbnailPath?: string;
+  blurPath?: string;
+  thumbnailTime: number;
+  flipHorizontally: boolean;
+}
+
+export function buildImageDerivativePlan(options: ImageDerivativePlanOptions): string[] {
+  if (!options.thumbnailPath && !options.blurPath) {
+    throw new Error('At least one image derivative output is required');
+  }
+
+  const args = ['-y', '-ss', String(options.thumbnailTime), '-i', options.inputPath];
+  if (options.thumbnailPath && options.blurPath) {
+    const prefix = options.flipHorizontally ? 'hflip,' : '';
+    args.push(
+      '-filter_complex', `[0:v]${prefix}split=2[thumbnail][blur-source];[blur-source]scale=80:142[blur]`,
+      '-map', '[thumbnail]', '-frames:v', '1', '-q:v', '2', options.thumbnailPath,
+      '-map', '[blur]', '-frames:v', '1', '-q:v', '15', options.blurPath,
+    );
+    return args;
+  }
+
+  if (options.thumbnailPath) {
+    if (options.flipHorizontally) args.push('-vf', 'hflip');
+    args.push('-frames:v', '1', '-q:v', '2', options.thumbnailPath);
+    return args;
+  }
+
+  const blurFilter = options.flipHorizontally ? 'hflip,scale=80:142' : 'scale=80:142';
+  args.push('-vf', blurFilter, '-frames:v', '1', '-q:v', '15', options.blurPath!);
+  return args;
 }
 
 export interface HlsTranscodePlan {
@@ -330,6 +371,7 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
 
   let localThumbPath = '';
   let localBlurPath = '';
+  let incrementalHlsUpload: IncrementalDirectoryUpload | undefined;
 
   logger.info('Video pipeline started', {
     jobId,
@@ -382,24 +424,29 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       inputFileSizeBytes: fs.statSync(activeInputPath).size,
     });
 
-    const derivativeTasks: Promise<unknown>[] = [];
     if (generateThumbnail && job.remotePayload?.thumbnailKey) {
       localThumbPath = path.join(config.PROCESSED_DIR, `${jobId}-thumb.jpg`);
-      const args = ['-y', '-i', activeInputPath, '-ss', String(thumbnailTime)];
-      if (!composition && facingMode === 'user') args.push('-vf', 'hflip');
-      args.push('-vframes', '1', '-q:v', '2', localThumbPath);
-      derivativeTasks.push(runLoggedStage(jobId, 'thumbnail', () => runFfmpeg(args, 15000), { thumbnailTime }));
     }
 
     if (generateBlur && job.remotePayload?.blurKey) {
       localBlurPath = path.join(config.PROCESSED_DIR, `${jobId}-blur.jpg`);
-      const filters = !composition && facingMode === 'user' ? 'scale=80:142,hflip' : 'scale=80:142';
-      derivativeTasks.push(runLoggedStage(jobId, 'blur-placeholder', () => runFfmpeg([
-          '-y', '-i', activeInputPath, '-ss', String(thumbnailTime),
-          '-vf', filters, '-vframes', '1', '-q:v', '15', localBlurPath,
-        ], 15000), { thumbnailTime }));
     }
-    await Promise.all(derivativeTasks);
+
+    if (localThumbPath || localBlurPath) {
+      const derivativeArgs = buildImageDerivativePlan({
+        inputPath: activeInputPath,
+        thumbnailPath: localThumbPath || undefined,
+        blurPath: localBlurPath || undefined,
+        thumbnailTime,
+        flipHorizontally: !composition && facingMode === 'user',
+      });
+      await runLoggedStage(jobId, 'image-derivatives', () => runFfmpeg(derivativeArgs, 15000), {
+        thumbnailTime,
+        generateThumbnail: !!localThumbPath,
+        generateBlur: !!localBlurPath,
+        videoDecodeCount: 1,
+      });
+    }
 
     if (generateHls) {
       jobService.updateJobStatus(jobId, 'PROCESSING', 0);
@@ -423,12 +470,20 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
         '-f', 'hls',
         '-hls_time', '4',
         '-hls_playlist_type', 'vod',
-        '-hls_flags', 'independent_segments',
+        '-hls_flags', 'independent_segments+temp_file',
         '-hls_segment_type', 'mpegts',
         '-hls_segment_filename', path.join(outputDir, 'stream_%v', 'data%03d.ts'),
         '-master_pl_name', 'master.m3u8',
         '-var_stream_map', varStreamMap,
       );
+
+      if (job.remotePayload?.outputDirKey) {
+        incrementalHlsUpload = startIncrementalDirectoryUpload(
+          job.remotePayload.bucket,
+          job.remotePayload.outputDirKey,
+          outputDir,
+        );
+      }
 
       logger.info('HLS transcode plan selected', {
         jobId,
@@ -533,11 +588,23 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       jobService.updateJobStatus(jobId, 'UPLOADING', 0);
       const uploadTasks: Promise<unknown>[] = [];
       if (generateHls && job.remotePayload.outputDirKey) {
-        uploadTasks.push(runLoggedStage(jobId, 'r2-upload-hls', () =>
-          uploadDirectoryToR2(job.remotePayload!.bucket, job.remotePayload!.outputDirKey!, outputDir), {
-          bucket: job.remotePayload.bucket,
-          outputDirKey: job.remotePayload.outputDirKey,
-        }));
+        if (incrementalHlsUpload) {
+          const uploader = incrementalHlsUpload;
+          uploadTasks.push(runLoggedStage(jobId, 'r2-upload-hls-finalize', async () => {
+            await uploader.finish();
+            incrementalHlsUpload = undefined;
+          }, {
+            bucket: job.remotePayload.bucket,
+            outputDirKey: job.remotePayload.outputDirKey,
+            mode: 'incremental-during-transcode',
+          }));
+        } else {
+          uploadTasks.push(runLoggedStage(jobId, 'r2-upload-hls', () =>
+            uploadDirectoryToR2(job.remotePayload!.bucket, job.remotePayload!.outputDirKey!, outputDir), {
+            bucket: job.remotePayload.bucket,
+            outputDirKey: job.remotePayload.outputDirKey,
+          }));
+        }
       }
       if (localThumbPath && fs.existsSync(localThumbPath)) {
         uploadTasks.push(runLoggedStage(jobId, 'r2-upload-thumbnail', () =>
@@ -600,6 +667,10 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
     }
   } finally {
     logger.info('Pipeline cleanup started', { jobId });
+    if (incrementalHlsUpload) {
+      await incrementalHlsUpload.abort();
+      incrementalHlsUpload = undefined;
+    }
     if (activeInputPath && fs.existsSync(activeInputPath)) {
       fs.unlink(activeInputPath, () => {});
     }
