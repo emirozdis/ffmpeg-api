@@ -18,7 +18,8 @@ interface VideoMetadata {
 }
 
 export interface HlsTranscodePlan {
-  pipeline: 'cuda' | 'software';
+  pipeline: 'cuda-nvdec' | 'cuda-upload' | 'software';
+  decode: 'nvdec' | 'software';
   inputOptions: string[];
   outputOptions: string[];
   filterComplex: string;
@@ -30,6 +31,7 @@ interface HlsTranscodePlanOptions {
   nvencPreset: string;
   nvencTune: string;
   cudaDevice: number;
+  cudaDecodeMode: 'auto' | 'nvdec' | 'software';
 }
 
 async function runLoggedStage<T>(
@@ -126,17 +128,18 @@ function startGpuTelemetry(jobId: string): () => void {
 
 export function buildHlsTranscodePlan(options: HlsTranscodePlanOptions): HlsTranscodePlan {
   const useCuda = options.videoEncoder === 'h264_nvenc';
-  const inputOptions = useCuda
+  const useNvdec = useCuda && options.cudaDecodeMode !== 'software';
+  const inputOptions = useNvdec
     ? [
         '-hwaccel', 'cuda',
         '-hwaccel_device', String(options.cudaDevice),
         '-hwaccel_output_format', 'cuda',
-        '-extra_hw_frames', '16',
+        '-threads', '1',
       ]
     : [];
   const filterComplex = useCuda
     ? [
-        '[0:v]split=3[v1080src][v720src][v480src]',
+        `${useNvdec ? '[0:v]' : `[0:v]format=yuv420p,hwupload_cuda=device=${options.cudaDevice},`}split=3[v1080src][v720src][v480src]`,
         '[v1080src]scale_cuda=w=-2:h=1920:format=yuv420p:interp_algo=bilinear:passthrough=0[v1080out]',
         '[v720src]scale_cuda=w=-2:h=1280:format=yuv420p:interp_algo=bilinear:passthrough=0[v720out]',
         '[v480src]scale_cuda=w=-2:h=854:format=yuv420p:interp_algo=bilinear:passthrough=0[v480out]',
@@ -184,7 +187,8 @@ export function buildHlsTranscodePlan(options: HlsTranscodePlanOptions): HlsTran
   }
 
   return {
-    pipeline: useCuda ? 'cuda' : 'software',
+    pipeline: useCuda ? (useNvdec ? 'cuda-nvdec' : 'cuda-upload') : 'software',
+    decode: useNvdec ? 'nvdec' : 'software',
     inputOptions,
     outputOptions,
     filterComplex,
@@ -332,7 +336,10 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
     originalFileName,
     remote: !!job.remotePayload,
     encoder: config.VIDEO_ENCODER,
-    pipeline: config.VIDEO_ENCODER === 'h264_nvenc' ? 'nvdec-cuda-nvenc' : 'software',
+    pipeline: config.VIDEO_ENCODER === 'h264_nvenc'
+      ? (config.CUDA_DECODE_MODE === 'software' ? 'software-cuda-nvenc' : 'nvdec-cuda-nvenc')
+      : 'software',
+    cudaDecodeMode: config.VIDEO_ENCODER === 'h264_nvenc' ? config.CUDA_DECODE_MODE : undefined,
     cudaDevice: config.VIDEO_ENCODER === 'h264_nvenc' ? config.CUDA_DEVICE : undefined,
     preset: config.VIDEO_ENCODER === 'h264_nvenc' ? config.NVENC_PRESET : undefined,
     tune: config.VIDEO_ENCODER === 'h264_nvenc' ? config.NVENC_TUNE : undefined,
@@ -409,6 +416,7 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
         nvencPreset: config.NVENC_PRESET,
         nvencTune: config.NVENC_TUNE,
         cudaDevice: config.CUDA_DEVICE,
+        cudaDecodeMode: config.CUDA_DECODE_MODE,
       });
       const varStreamMap = hasAudio ? 'v:0,a:0 v:1,a:1 v:2,a:2' : 'v:0 v:1 v:2';
       plan.outputOptions.push(
@@ -425,14 +433,14 @@ export const processVideo = async (jobId: string, initialInputPath: string): Pro
       logger.info('HLS transcode plan selected', {
         jobId,
         pipeline: plan.pipeline,
-        decode: plan.pipeline === 'cuda' ? 'NVDEC (-hwaccel cuda)' : 'software',
-        scale: plan.pipeline === 'cuda' ? 'scale_cuda (bilinear)' : 'scale',
+        decode: plan.decode === 'nvdec' ? 'NVDEC (-hwaccel cuda)' : 'software',
+        scale: plan.pipeline !== 'software' ? 'scale_cuda (bilinear)' : 'scale',
         encode: config.VIDEO_ENCODER,
         renditions: ['1080p@4500k', '720p@2500k', '480p@1200k'],
         audio: hasAudio ? 'AAC 128k x3' : 'none',
         preset: config.VIDEO_ENCODER === 'h264_nvenc' ? config.NVENC_PRESET : 'veryfast',
         tune: config.VIDEO_ENCODER === 'h264_nvenc' ? config.NVENC_TUNE : undefined,
-        cudaDevice: plan.pipeline === 'cuda' ? config.CUDA_DEVICE : undefined,
+        cudaDevice: plan.pipeline !== 'software' ? config.CUDA_DEVICE : undefined,
       });
 
       const hlsStartedAt = Date.now();

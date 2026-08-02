@@ -30,7 +30,7 @@ const startDiagnostics = () => {
   logger.info(` • System RAM  : ${hw.ram.totalGigabytes} GB Total (${hw.ram.availableGigabytes} GB Free)`);
   logger.info(` • GPU Device  : ${gpuStatus}`);
   logger.info(` • HLS Encoder : ${config.VIDEO_ENCODER}`);
-  logger.info(` • GPU Pipeline: ${config.VIDEO_ENCODER === 'h264_nvenc' ? `NVDEC -> scale_cuda -> NVENC (device ${config.CUDA_DEVICE})` : 'software decode/scale/encode'}`);
+  logger.info(` • GPU Pipeline: ${config.VIDEO_ENCODER === 'h264_nvenc' ? `${config.CUDA_DECODE_MODE === 'software' ? 'software decode -> CUDA upload' : 'NVDEC'} -> scale_cuda -> NVENC (device ${config.CUDA_DEVICE})` : 'software decode/scale/encode'}`);
   logger.info(` • GPU Metrics : ${config.GPU_TELEMETRY_INTERVAL_MS > 0 ? `every ${config.GPU_TELEMETRY_INTERVAL_MS}ms while encoding` : 'disabled'}`);
   logger.info(` • FFmpeg      : ${ffmpegStatus}`);
   logger.info(` • FFprobe     : ${ffprobeStatus}`);

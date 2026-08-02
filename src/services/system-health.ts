@@ -224,10 +224,10 @@ export class HealthChecker {
       this.checks.push({
         name: 'gpu-pipeline',
         status: 'pass',
-        message: `NVDEC/CUDA/NVENC pipeline is available on CUDA device ${config.CUDA_DEVICE}`,
+        message: `${config.CUDA_DECODE_MODE === 'software' ? 'Software-decode/CUDA-upload' : 'NVDEC'}/CUDA/NVENC pipeline is available on CUDA device ${config.CUDA_DEVICE}`,
         details: {
           device: config.CUDA_DEVICE,
-          decode: 'NVDEC via -hwaccel cuda',
+          decode: config.CUDA_DECODE_MODE === 'software' ? 'software decode with hwupload_cuda' : 'NVDEC via -hwaccel cuda',
           scale: 'scale_cuda',
           encode: 'h264_nvenc',
         },

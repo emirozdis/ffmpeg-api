@@ -20,6 +20,7 @@ export interface AppConfig {
   NVENC_PRESET: string;
   NVENC_TUNE: string;
   CUDA_DEVICE: number;
+  CUDA_DECODE_MODE: 'auto' | 'nvdec' | 'software';
   REQUIRE_CUDA_PIPELINE: boolean;
   GPU_TELEMETRY_INTERVAL_MS: number;
   

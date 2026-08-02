@@ -40,20 +40,56 @@ if [ "${REQUIRE_CUDA_PIPELINE:-true}" = 'true' ]; then
     rm -rf "$gpu_probe_dir"
     exit 1
   fi
-  if ! ffmpeg -hide_banner -loglevel error -y \
-    -hwaccel cuda -hwaccel_device "$cuda_device" -hwaccel_output_format cuda -extra_hw_frames 16 \
-    -i "$gpu_probe_dir/input.mp4" \
-    -filter_complex '[0:v]split=3[v1080src][v720src][v480src];[v1080src]scale_cuda=w=-2:h=1920:format=yuv420p:interp_algo=bilinear:passthrough=0[v1080out];[v720src]scale_cuda=w=-2:h=1280:format=yuv420p:interp_algo=bilinear:passthrough=0[v720out];[v480src]scale_cuda=w=-2:h=854:format=yuv420p:interp_algo=bilinear:passthrough=0[v480out]' \
-    -map '[v1080out]' -map '[v720out]' -map '[v480out]' \
-    -frames:v 1 -c:v h264_nvenc -gpu "$cuda_device" -preset p3 -tune hq -multipass disabled \
-    -f null - 2>"$gpu_probe_log"; then
-    echo >&2 'Fatal: the NVDEC/CUDA-scale/three-session-NVENC pipeline is not usable.'
-    sed -n '1,80p' "$gpu_probe_log" >&2
-    rm -rf "$gpu_probe_dir"
-    exit 1
+  requested_decode_mode="${CUDA_DECODE_MODE:-auto}"
+  case "$requested_decode_mode" in
+    auto|nvdec|software) ;;
+    *)
+      echo >&2 'Fatal: CUDA_DECODE_MODE must be auto, nvdec, or software.'
+      rm -rf "$gpu_probe_dir"
+      exit 1
+      ;;
+  esac
+
+  pipeline_ready=false
+  if [ "$requested_decode_mode" != 'software' ]; then
+    if ffmpeg -hide_banner -loglevel error -y \
+      -hwaccel cuda -hwaccel_device "$cuda_device" -hwaccel_output_format cuda -threads 1 \
+      -i "$gpu_probe_dir/input.mp4" \
+      -filter_complex '[0:v]split=3[v1080src][v720src][v480src];[v1080src]scale_cuda=w=-2:h=1920:format=yuv420p:interp_algo=bilinear:passthrough=0[v1080out];[v720src]scale_cuda=w=-2:h=1280:format=yuv420p:interp_algo=bilinear:passthrough=0[v720out];[v480src]scale_cuda=w=-2:h=854:format=yuv420p:interp_algo=bilinear:passthrough=0[v480out]' \
+      -map '[v1080out]' -map '[v720out]' -map '[v480out]' \
+      -frames:v 1 -c:v h264_nvenc -gpu "$cuda_device" -preset p3 -tune hq -multipass disabled \
+      -f null - 2>"$gpu_probe_log"; then
+      CUDA_DECODE_MODE=nvdec
+      export CUDA_DECODE_MODE
+      pipeline_ready=true
+    elif [ "$requested_decode_mode" = 'nvdec' ]; then
+      echo >&2 'Fatal: CUDA_DECODE_MODE=nvdec was requested but NVDEC initialization failed.'
+      sed -n '1,80p' "$gpu_probe_log" >&2
+      rm -rf "$gpu_probe_dir"
+      exit 1
+    else
+      echo >&2 'Warning: NVDEC initialization failed; trying software decode with CUDA upload.'
+      sed -n '1,20p' "$gpu_probe_log" >&2
+    fi
+  fi
+
+  if [ "$pipeline_ready" != 'true' ]; then
+    if ! ffmpeg -hide_banner -loglevel error -y \
+      -i "$gpu_probe_dir/input.mp4" \
+      -filter_complex "[0:v]format=yuv420p,hwupload_cuda=device=$cuda_device,split=3[v1080src][v720src][v480src];[v1080src]scale_cuda=w=-2:h=1920:format=yuv420p:interp_algo=bilinear:passthrough=0[v1080out];[v720src]scale_cuda=w=-2:h=1280:format=yuv420p:interp_algo=bilinear:passthrough=0[v720out];[v480src]scale_cuda=w=-2:h=854:format=yuv420p:interp_algo=bilinear:passthrough=0[v480out]" \
+      -map '[v1080out]' -map '[v720out]' -map '[v480out]' \
+      -frames:v 1 -c:v h264_nvenc -gpu "$cuda_device" -preset p3 -tune hq -multipass disabled \
+      -f null - 2>"$gpu_probe_log"; then
+      echo >&2 'Fatal: the software-decode/CUDA-upload/three-session-NVENC fallback is not usable.'
+      sed -n '1,80p' "$gpu_probe_log" >&2
+      rm -rf "$gpu_probe_dir"
+      exit 1
+    fi
+    CUDA_DECODE_MODE=software
+    export CUDA_DECODE_MODE
   fi
   rm -rf "$gpu_probe_dir"
-  echo "CUDA_PIPELINE_READY device=$cuda_device decode=nvdec scale=scale_cuda encode=h264_nvenc renditions=3"
+  echo "CUDA_PIPELINE_READY device=$cuda_device decode=$CUDA_DECODE_MODE scale=scale_cuda encode=h264_nvenc renditions=3"
 fi
 
 model_log="${MODEL_LOG_FILE:-/data/logs/model.log}"

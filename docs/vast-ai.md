@@ -94,6 +94,7 @@ Add non-secret settings to the template:
 -e REQUIRE_NVENC=true
 -e REQUIRE_CUDA_PIPELINE=true
 -e CUDA_DEVICE=0
+-e CUDA_DECODE_MODE=auto
 -e GPU_TELEMETRY_INTERVAL_MS=5000
 -e MAX_CONCURRENT_JOBS=1
 -e MAX_CONCURRENT_JOBS_CAP=1
@@ -119,10 +120,12 @@ CLOUDFLARE_R2_BUCKET_NAME
 backend origin, such as `https://myturn.app`. Do not add `REPORT_ADDR`,
 `PYWORKER_REPO`, `WORKER_PORT`, or `WORKER_HTTP_PORT`.
 
-One HLS job uses NVDEC hardware decoding, keeps frames in GPU memory through
-three `scale_cuda` rendition branches, and opens three NVENC encoders. The `p3`
-preset balances fast completion with phone-viewing quality, while disabled
-NVENC multipass prioritizes speed. Start with one
+One HLS job prefers NVDEC hardware decoding, keeps frames in GPU memory through
+three `scale_cuda` rendition branches, and opens three NVENC encoders. If NVDEC
+cannot initialize, `CUDA_DECODE_MODE=auto` falls back to software decoding and
+a CUDA upload before the same GPU scaling and encoding stages. The `p3` preset
+balances fast completion with phone-viewing quality, while disabled NVENC
+multipass prioritizes speed. Start with one
 job at a time. Raise concurrency only after checking the selected GPU's
 encode-session capacity and observing memory/throughput. While a job is active,
 the worker logs overall GPU, encoder, decoder, memory, and power telemetry every
@@ -166,10 +169,12 @@ VAST_API_KEY
 
 ## 5. Verify on the rented GPU
 
-The entrypoint performs a real three-rendition NVDEC -> `scale_cuda` -> NVENC
-probe before starting Node. A missing GPU, missing video driver capability,
-unsupported FFmpeg build, insufficient encoder sessions, or incompatible driver
-causes the container to exit instead of silently falling back to CPU.
+The entrypoint first probes the three-rendition NVDEC -> `scale_cuda` -> NVENC
+path without allocating unnecessary extra decode surfaces. If NVDEC cannot
+initialize, it probes software decode -> `hwupload_cuda` -> `scale_cuda` ->
+NVENC instead. The container exits only when neither GPU encoding path works.
+The `CUDA_PIPELINE_READY` log reports either `decode=nvdec` or
+`decode=software`.
 
 After startup, verify:
 

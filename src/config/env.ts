@@ -22,6 +22,10 @@ const configuredVideoEncoder = process.env.VIDEO_ENCODER || 'libx264';
 if (!['libx264', 'h264_nvenc'].includes(configuredVideoEncoder)) {
   throw new Error('VIDEO_ENCODER must be either libx264 or h264_nvenc');
 }
+const configuredCudaDecodeMode = process.env.CUDA_DECODE_MODE || 'auto';
+if (!['auto', 'nvdec', 'software'].includes(configuredCudaDecodeMode)) {
+  throw new Error('CUDA_DECODE_MODE must be auto, nvdec, or software');
+}
 
 // Ensure storage directories exist immediately
 [UPLOAD_DIR, PROCESSED_DIR, STATE_DIR].forEach((dir) => {
@@ -51,6 +55,7 @@ export const config: AppConfig = {
   NVENC_PRESET: process.env.NVENC_PRESET || 'p3',
   NVENC_TUNE: process.env.NVENC_TUNE || 'hq',
   CUDA_DEVICE: parseInt(process.env.CUDA_DEVICE || '0', 10),
+  CUDA_DECODE_MODE: configuredCudaDecodeMode as 'auto' | 'nvdec' | 'software',
   REQUIRE_CUDA_PIPELINE: process.env.REQUIRE_CUDA_PIPELINE === 'true',
   GPU_TELEMETRY_INTERVAL_MS: parseInt(process.env.GPU_TELEMETRY_INTERVAL_MS || '5000', 10),
 

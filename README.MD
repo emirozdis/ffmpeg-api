@@ -7,7 +7,7 @@ The MyTurn Video Pipeline Service is a robust, dynamic video ingestion, transcod
 ## Architecture & Features
 
 - **HLS Adaptive Bitrate Streaming Ladder**: Automatically segments video inputs into standard HLS adaptive streams (multi-variant playlists at 1080p, 720p, and 480p) optimized for dynamic mobile and web playback.
-- **End-to-End NVIDIA Pipeline**: The GPU image uses NVDEC decoding, three GPU-resident `scale_cuda` branches, and NVENC encoding, with an exact startup probe and live encoder/decoder telemetry.
+- **Adaptive NVIDIA Pipeline**: The GPU image prefers NVDEC, then safely falls back to software decode plus CUDA upload when NVDEC is unavailable. Scaling and all three encodes remain GPU-resident, with an exact startup probe and live telemetry.
 - **On-the-Fly Asset Extraction**: Extracts custom poster thumbnails and ultra-lightweight blur image placeholders with intelligent device camera mirroring correction flags (`facingMode` support).
 - **Dynamic Load balancing and Concurrency Control**: Monitors logical CPU usage, memory thresholds, and load averages to continuously scale worker concurrency counts up or down to avoid runtime bottlenecks.
 - **S3-Compatible Cloudflare R2 Pipeline**: Downloads source files and streams processed assets back into remote R2 buckets, followed by secure disk garbage collection of local file workspaces.
@@ -72,6 +72,7 @@ NVENC_PRESET=p3
 NVENC_TUNE=hq
 REQUIRE_CUDA_PIPELINE=true
 CUDA_DEVICE=0
+CUDA_DECODE_MODE=auto
 GPU_TELEMETRY_INTERVAL_MS=5000
 
 # Cloudflare R2 Storage Credentials
